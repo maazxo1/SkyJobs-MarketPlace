@@ -409,12 +409,4 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
-<div align="center">
 
-Built by **Group 02 — Web Engineering**
-
-If you find this project useful, consider giving it a star.
-
-[![Star on GitHub](https://img.shields.io/github/stars/your-username/skyjobs?style=social)](../../stargazers)
-
-</div>
