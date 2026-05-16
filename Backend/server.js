@@ -10,6 +10,9 @@ async function start() {
   await knex.migrate.latest();
   console.log('Migrations applied');
 
+  await knex.seed.run();
+  console.log('Seeds applied');
+
   const server = http.createServer(app);
   initSocket(server);
 
