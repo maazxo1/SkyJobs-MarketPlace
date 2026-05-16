@@ -62,6 +62,14 @@ exports.listJobs = async (req, res, next) => {
 exports.createJob = async (req, res, next) => {
   try {
     const { title, description, category_id, skills_required, budget_min, budget_max, deadline, location } = req.body;
+
+    if (!title || !description || !category_id || budget_min == null || budget_max == null) {
+      return error(res, 'title, description, category_id, budget_min, and budget_max are required', 400, 'VALIDATION_ERROR');
+    }
+    if (Number(budget_min) > Number(budget_max)) {
+      return error(res, 'budget_min cannot exceed budget_max', 400, 'VALIDATION_ERROR');
+    }
+
     const expiresAt = new Date(Date.now() + JOB_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
     const [job] = await db('jobs').insert(
@@ -119,7 +127,17 @@ exports.updateJob = async (req, res, next) => {
     if (!job) return error(res, 'Job not found or unauthorized', 404, 'NOT_FOUND');
     if (!['open', 'closed'].includes(job.status)) return error(res, 'Cannot edit a job in this status', 400, 'INVALID_STATUS');
 
-    const updates = { ...req.body };
+    const ALLOWED = ['title', 'description', 'category_id', 'skills_required', 'budget_min', 'budget_max', 'deadline', 'location'];
+    const updates = {};
+    for (const key of ALLOWED) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) return error(res, 'No valid fields to update', 400, 'VALIDATION_ERROR');
+
+    const bMin = updates.budget_min != null ? Number(updates.budget_min) : Number(job.budget_min);
+    const bMax = updates.budget_max != null ? Number(updates.budget_max) : Number(job.budget_max);
+    if (bMin > bMax) return error(res, 'budget_min cannot exceed budget_max', 400, 'VALIDATION_ERROR');
+
     if (updates.skills_required) updates.skills_required = JSON.stringify(updates.skills_required);
 
     const [updated] = await db('jobs').where({ id: req.params.id }).update(updates, ['*']);
@@ -136,6 +154,9 @@ exports.deleteJob = async (req, res, next) => {
 
     const { count } = await db('bids').where({ job_id: job.id }).count('id as count').first();
     if (Number(count) > 0) return error(res, 'Cannot delete a job with submitted bids', 400, 'HAS_BIDS');
+
+    const { count: contractCount } = await db('contracts').where({ job_id: job.id }).count('id as count').first();
+    if (Number(contractCount) > 0) return error(res, 'Cannot delete a job with an associated contract', 400, 'HAS_CONTRACT');
 
     await db('jobs').where({ id: req.params.id }).delete();
     return success(res, null, 'Job deleted');

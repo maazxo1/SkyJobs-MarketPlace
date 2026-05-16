@@ -190,8 +190,14 @@ exports.withdrawDispute = async (req, res, next) => {
       await trx('disputes').where({ id: dispute.id }).update({ status: 'withdrawn', updated_at: new Date() });
       await trx('orders').where({ id: order.id }).update({ dispute_id: null });
 
-      // Determine what status to resume (simple heuristic: go back to in_progress)
-      await transition(trx, order, 'in_progress', req.user.id, 'user_action', 'Dispute withdrawn — resuming order');
+      // Restore the status the order had before the dispute was opened
+      const prevHistory = await trx('order_status_history')
+        .where({ order_id: order.id })
+        .whereNot('new_status', 'in_dispute')
+        .orderBy('created_at', 'desc')
+        .first();
+      const restoreStatus = prevHistory?.new_status || 'in_progress';
+      await transition(trx, order, restoreStatus, req.user.id, 'user_action', 'Dispute withdrawn — order resumed');
 
       await notify({
         userId: dispute.respondent_id,
@@ -267,6 +273,9 @@ exports.adminResolve = async (req, res, next) => {
     }
 
     const order = await db('orders').where({ id: dispute.order_id }).first();
+    if (order.escrow_status !== 'held') {
+      return error(res, 'Escrow funds are not held — cannot resolve dispute', 400, 'ESCROW_NOT_HELD');
+    }
     const now = new Date();
 
     await db.transaction(async (trx) => {
@@ -394,7 +403,9 @@ exports.adminListDisputes = async (req, res, next) => {
 
     if (status) query = query.where('disputes.status', status);
 
-    const [{ count }] = await db('disputes').count('id as count');
+    let countQuery = db('disputes');
+    if (status) countQuery = countQuery.where('disputes.status', status);
+    const [{ count }] = await countQuery.count('id as count');
     const disputes = await query.orderBy('disputes.created_at', 'asc').limit(parseInt(limit, 10)).offset(offset);
 
     return success(res, disputes, 'Success', 200, {

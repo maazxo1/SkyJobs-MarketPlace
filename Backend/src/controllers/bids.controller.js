@@ -124,10 +124,6 @@ exports.acceptBid = async (req, res, next) => {
     if (bid.status !== 'pending') return error(res, 'Only pending bids can be accepted', 400, 'INVALID_STATUS');
     if (bid.job_status !== 'open') return error(res, 'Job is no longer accepting bids', 400, 'JOB_CLOSED');
 
-    // Guard against duplicate order from double-submit / race condition
-    const existingOrder = await db('orders').where({ bid_id: bid.id }).first();
-    if (existingOrder) return error(res, 'An order for this bid already exists', 409, 'ALREADY_EXISTS');
-
     if (bid.expires_at && new Date() > new Date(bid.expires_at)) {
       await db('bids').where({ id: bid.id }).update({ status: 'expired' });
       return error(res, 'This proposal has expired', 400, 'BID_EXPIRED');
@@ -142,8 +138,21 @@ exports.acceptBid = async (req, res, next) => {
     const deadlineStr = deadline.toISOString().slice(0, 10);
 
     let contract, order;
+    let raceError = null;
 
     await db.transaction(async (trx) => {
+      // Lock the bid row so concurrent accepts queue behind this transaction
+      const freshBid = await trx('bids').where({ id: bid.id }).forUpdate().first();
+      if (!freshBid || freshBid.status !== 'pending') {
+        raceError = { msg: 'This proposal is no longer pending', status: 400, code: 'INVALID_STATUS' };
+        return;
+      }
+      const existingOrder = await trx('orders').where({ bid_id: bid.id }).first();
+      if (existingOrder) {
+        raceError = { msg: 'An order for this bid already exists', status: 409, code: 'ALREADY_EXISTS' };
+        return;
+      }
+
       // 1. Accept this bid
       await trx('bids').where({ id: bid.id }).update({ status: 'accepted' });
 
@@ -254,6 +263,8 @@ exports.acceptBid = async (req, res, next) => {
         });
       }
     });
+
+    if (raceError) return error(res, raceError.msg, raceError.status, raceError.code);
 
     // Email the winning freelancer
     const winnerUser = await db('users').where({ id: bid.freelancer_id }).select('name', 'email').first();
@@ -377,11 +388,6 @@ exports.respondToCounter = async (req, res, next) => {
     // Accept: use counter terms to accept the bid
     if (bid.job_status !== 'open') return error(res, 'Job is no longer open', 400, 'JOB_CLOSED');
 
-    // Mutate bid with counter terms then call acceptBid logic inline
-    req.params.id = bid.id;
-    req.body = {}; // acceptBid reads from DB, not body
-
-    // Override bid amount and days for the accept flow
     const platformFee = parseFloat((bid.counter_amount * PLATFORM_FEE_RATE).toFixed(2));
     const freelancerPayout = parseFloat((bid.counter_amount - platformFee).toFixed(2));
     const deadline = new Date();
@@ -389,8 +395,21 @@ exports.respondToCounter = async (req, res, next) => {
     const deadlineStr = deadline.toISOString().slice(0, 10);
 
     let contract, order;
+    let raceError = null;
 
     await db.transaction(async (trx) => {
+      // Lock bid row to prevent concurrent counter acceptances
+      const freshBid = await trx('bids').where({ id: bid.id }).forUpdate().first();
+      if (!freshBid || freshBid.counter_status !== 'pending') {
+        raceError = { msg: 'Counter-offer is no longer pending', status: 400, code: 'NO_COUNTER' };
+        return;
+      }
+      const existingOrder = await trx('orders').where({ bid_id: bid.id }).first();
+      if (existingOrder) {
+        raceError = { msg: 'An order for this bid already exists', status: 409, code: 'ALREADY_EXISTS' };
+        return;
+      }
+
       await trx('bids').where({ id: bid.id }).update({ status: 'accepted', counter_status: 'accepted' });
       await trx('jobs').where({ id: bid.job_id }).update({ status: 'closed' });
 
@@ -462,6 +481,8 @@ exports.respondToCounter = async (req, res, next) => {
         trx,
       });
     });
+
+    if (raceError) return error(res, raceError.msg, raceError.status, raceError.code);
 
     return success(res, { contract, order }, 'Counter-offer accepted — order created', 201);
   } catch (err) {
