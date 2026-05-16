@@ -32,8 +32,12 @@ function initSocket(httpServer) {
     socket.join(`user:${userId}`);
 
     // Client asks to join an order room (for real-time chat + status)
+    // Cap at 10 order rooms per socket to prevent room exhaustion
     socket.on('join:order', (orderId) => {
-      if (orderId) socket.join(`order:${orderId}`);
+      if (!orderId) return;
+      const orderRooms = [...socket.rooms].filter((r) => r.startsWith('order:'));
+      if (orderRooms.length >= 10) return;
+      socket.join(`order:${orderId}`);
     });
 
     socket.on('leave:order', (orderId) => {

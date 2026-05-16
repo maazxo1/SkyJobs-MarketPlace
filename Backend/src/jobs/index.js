@@ -165,7 +165,7 @@ cron.schedule('5 * * * *', async () => {
         userId: job.client_id, eventType: 'job.expired',
         title: 'Job listing expired',
         message: `Your job listing "${job.title}" has expired. Reopen it to receive more proposals.`,
-        link: `/jobs/${job.id}`, entityType: 'order', entityId: job.id,
+        link: `/jobs/${job.id}`, entityType: 'job', entityId: job.id,
       });
     }
   } catch (e) { console.error('[jobs] job expiry:', e.message); }
@@ -211,7 +211,7 @@ cron.schedule('0 2 * * *', async () => {
         userId: p.freelancer_id, eventType: 'payout.available',
         title: 'Payment available',
         message: `$${p.amount} is now available for withdrawal.`,
-        link: '/earnings', entityType: 'order', entityId: p.id,
+        link: '/earnings', entityType: 'payout', entityId: p.id,
       });
     }
   } catch (e) { console.error('[jobs] payout clearance:', e.message); }

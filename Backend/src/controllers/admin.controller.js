@@ -168,6 +168,7 @@ exports.forceOrderStatus = async (req, res, next) => {
 
     const order = await db('orders').where({ id: req.params.id }).first();
     if (!order) return error(res, 'Order not found', 404, 'NOT_FOUND');
+    if (order.status === status) return error(res, `Order is already in status: ${status}`, 400, 'NO_CHANGE');
 
     await db.transaction(async (trx) => {
       await audit(trx, {
@@ -177,17 +178,28 @@ exports.forceOrderStatus = async (req, res, next) => {
       });
       await transition(trx, order, status, req.user.id, 'admin', `Admin override: ${note}`);
 
+      const now = new Date();
       if (status === 'completed') {
-        await trx('orders').where({ id: order.id }).update({ completed_at: new Date() });
-        await trx('contracts').where({ id: order.contract_id }).update({ status: 'completed', completed_at: new Date() });
+        await trx('orders').where({ id: order.id }).update({ completed_at: now });
+        await trx('contracts').where({ id: order.contract_id }).update({ status: 'completed', completed_at: now });
+        // Release escrow if funds are still held
+        if (order.escrow_status === 'held') {
+          await releaseFunds(trx, { order, triggeredBy: req.user.id, note: `Admin force-complete: ${note}` });
+          await trx('users').where({ id: order.freelancer_id }).increment({ jobs_completed: 1, total_earned: order.freelancer_payout });
+          await trx('users').where({ id: order.client_id }).increment({ total_spent: order.amount });
+        }
       } else if (status === 'cancelled') {
-        await trx('orders').where({ id: order.id }).update({ cancelled_at: new Date(), cancellation_reason: note });
-        await trx('contracts').where({ id: order.contract_id }).update({ status: 'cancelled', cancelled_at: new Date() });
+        await trx('orders').where({ id: order.id }).update({ cancelled_at: now, cancellation_reason: note });
+        await trx('contracts').where({ id: order.contract_id }).update({ status: 'cancelled', cancelled_at: now });
+        // Refund escrow if funds are still held
+        if (order.escrow_status === 'held') {
+          await refundFunds(trx, { order, triggeredBy: req.user.id, note: `Admin force-cancel: ${note}` });
+        }
       }
 
       for (const uid of [order.client_id, order.freelancer_id]) {
         await notify({
-          userId: uid, eventType: 'order.started',
+          userId: uid, eventType: 'order.admin_update',
           title: 'Order status updated by admin',
           message: `An admin has updated your order status to "${status}". Note: ${note}`,
           link: `/orders/${order.id}`,

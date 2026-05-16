@@ -56,9 +56,16 @@ exports.getMe = async (req, res, next) => {
   try {
     const user = await db('users')
       .where({ id: req.user.id })
-      .select('id', 'name', 'email', 'role', 'avatar', 'bio', 'created_at')
+      .select(
+        'id', 'name', 'email', 'role', 'avatar', 'bio',
+        'is_banned', 'trust_level', 'trust_score',
+        'jobs_completed', 'jobs_posted', 'total_earned', 'total_spent',
+        'late_delivery_count', 'dispute_count', 'dispute_loss_count',
+        'created_at', 'last_active_at',
+      )
       .first();
     if (!user) return error(res, 'User not found', 404, 'NOT_FOUND');
+    if (user.is_banned) return error(res, 'Account suspended', 403, 'ACCOUNT_BANNED');
     return success(res, user);
   } catch (err) {
     next(err);

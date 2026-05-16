@@ -27,6 +27,10 @@ exports.createBid = async (req, res, next) => {
   try {
     const { job_id, amount, delivery_days, cover_letter } = req.body;
 
+    if (!amount || Number(amount) <= 0) return error(res, 'Bid amount must be a positive number', 400, 'VALIDATION_ERROR');
+    if (!delivery_days || Number(delivery_days) < 1) return error(res, 'Delivery days must be at least 1', 400, 'VALIDATION_ERROR');
+    if (!cover_letter || !cover_letter.trim()) return error(res, 'Cover letter is required', 400, 'VALIDATION_ERROR');
+
     const job = await db('jobs').where({ id: job_id, status: 'open' }).first();
     if (!job) return error(res, 'Job not found or not accepting bids', 404, 'NOT_FOUND');
     if (job.client_id === req.user.id) return error(res, 'Cannot bid on your own job', 400, 'INVALID_ACTION');
@@ -119,6 +123,11 @@ exports.acceptBid = async (req, res, next) => {
     if (bid.client_id !== req.user.id) return error(res, 'Unauthorized', 403, 'FORBIDDEN');
     if (bid.status !== 'pending') return error(res, 'Only pending bids can be accepted', 400, 'INVALID_STATUS');
     if (bid.job_status !== 'open') return error(res, 'Job is no longer accepting bids', 400, 'JOB_CLOSED');
+
+    // Guard against duplicate order from double-submit / race condition
+    const existingOrder = await db('orders').where({ bid_id: bid.id }).first();
+    if (existingOrder) return error(res, 'An order for this bid already exists', 409, 'ALREADY_EXISTS');
+
     if (bid.expires_at && new Date() > new Date(bid.expires_at)) {
       await db('bids').where({ id: bid.id }).update({ status: 'expired' });
       return error(res, 'This proposal has expired', 400, 'BID_EXPIRED');

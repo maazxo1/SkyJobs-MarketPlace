@@ -1,17 +1,19 @@
 const paginate = async (queryBuilder, page = 1, limit = 10) => {
-  const offset = (Number(page) - 1) * Number(limit);
+  const safePage  = Math.max(1, parseInt(page, 10)  || 1);
+  const safeLimit = Math.min(Math.max(1, parseInt(limit, 10) || 10), 100);
+  const offset = (safePage - 1) * safeLimit;
   const [countResult, data] = await Promise.all([
     queryBuilder.clone().clearSelect().clearOrder().count('* as count').first(),
-    queryBuilder.clone().limit(Number(limit)).offset(offset),
+    queryBuilder.clone().limit(safeLimit).offset(offset),
   ]);
   const total = Number(countResult.count);
   return {
     data,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page: safePage,
+      limit: safeLimit,
       total,
-      pages: Math.ceil(total / Number(limit)),
+      pages: Math.ceil(total / safeLimit),
     },
   };
 };

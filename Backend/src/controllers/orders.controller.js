@@ -166,10 +166,12 @@ exports.getOrder = async (req, res, next) => {
       db('deliveries')
         .where({ order_id: order.id })
         .orderBy('created_at', 'desc')
-        .then((rows) => Promise.all(rows.map(async (d) => {
-          const attachments = await db('delivery_attachments').where({ delivery_id: d.id });
-          return { ...d, attachments };
-        }))),
+        .then(async (rows) => {
+          if (rows.length === 0) return [];
+          const ids = rows.map((d) => d.id);
+          const allAttachments = await db('delivery_attachments').whereIn('delivery_id', ids);
+          return rows.map((d) => ({ ...d, attachments: allAttachments.filter((a) => a.delivery_id === d.id) }));
+        }),
       db('cancellation_requests')
         .where({ order_id: order.id, status: 'pending' })
         .join('users as requester', 'cancellation_requests.requested_by', 'requester.id')
@@ -250,6 +252,13 @@ exports.deliverOrder = async (req, res, next) => {
 
     const { message, attachments = [] } = req.body;
     if (message && message.length > 5000) return error(res, 'Message must be under 5000 characters', 400, 'VALIDATION_ERROR');
+    if (attachments.length > 10) return error(res, 'Maximum 10 attachments per delivery', 400, 'VALIDATION_ERROR');
+    for (const a of attachments) {
+      if (!a.url) continue;
+      try { const u = new URL(a.url); if (!['http:', 'https:'].includes(u.protocol)) throw new Error(); } catch {
+        return error(res, 'Attachment URLs must be valid HTTP/HTTPS URLs', 400, 'VALIDATION_ERROR');
+      }
+    }
 
     const isRevision = order.status === 'revision_requested';
     const revisionNumber = isRevision ? order.revision_count : 0;

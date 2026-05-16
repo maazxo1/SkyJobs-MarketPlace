@@ -324,9 +324,9 @@ const OrderDetail = () => {
   const s            = order.status;
   const due          = daysUntil(order.deadline);
   const isActive     = !['completed', 'cancelled'].includes(s);
-  const canDispute   = isClient
+  const canDispute   = s !== 'in_dispute' && (isClient
     ? ['in_progress', 'delivered'].includes(s)
-    : ['in_progress', 'revision_requested'].includes(s);
+    : ['in_progress', 'revision_requested'].includes(s));
   const hasPendingCancel = !!order.pending_cancellation;
   const hasPendingExt    = !!order.pending_extension;
   const revisionFeedback = order.deliveries?.find((d) => d.is_revision === false && d.status === 'rejected')?.rejection_feedback
