@@ -2,6 +2,7 @@ const db = require('../config/database');
 const { success, error } = require('../utils/response');
 const { notify } = require('../utils/notify');
 const { holdFunds, PLATFORM_FEE_RATE } = require('../utils/escrow');
+const { sendTemplateEmail } = require('../services/email.service');
 
 exports.getMyBids = async (req, res, next) => {
   try {
@@ -50,6 +51,16 @@ exports.createBid = async (req, res, next) => {
       entityId: bid.id,
       priority: 'normal',
     });
+
+    // Email the client about the new proposal
+    const client = await db('users').where({ id: job.client_id }).select('name', 'email').first();
+    sendTemplateEmail(client.email, 'bidReceived', {
+      clientName: client.name,
+      freelancerName: freelancer.name,
+      jobTitle: job.title,
+      amount,
+      jobId: job.id,
+    }).catch(() => {});
 
     return success(res, bid, 'Bid submitted successfully', 201);
   } catch (err) {
@@ -234,6 +245,15 @@ exports.acceptBid = async (req, res, next) => {
         });
       }
     });
+
+    // Email the winning freelancer
+    const winnerUser = await db('users').where({ id: bid.freelancer_id }).select('name', 'email').first();
+    sendTemplateEmail(winnerUser.email, 'bidAccepted', {
+      freelancerName: winnerUser.name,
+      jobTitle: bid.job_title,
+      amount: bid.amount,
+      orderId: order.id,
+    }).catch(() => {});
 
     return success(res, { contract, order }, 'Bid accepted — order and contract created', 201);
   } catch (err) {

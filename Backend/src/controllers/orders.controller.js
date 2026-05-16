@@ -3,6 +3,8 @@ const { success, error } = require('../utils/response');
 const { notify } = require('../utils/notify');
 const { releaseFunds, refundFunds } = require('../utils/escrow');
 const { adjustTrustScore, recalcRating } = require('../utils/trust');
+const { emitToOrder, emitToUser } = require('../socket');
+const { sendTemplateEmail } = require('../services/email.service');
 
 // ── Helper: record a status transition ─────────────────────────────────────
 async function transition(trx, order, newStatus, userId, triggerType = 'user_action', note = null) {
@@ -18,6 +20,12 @@ async function transition(trx, order, newStatus, userId, triggerType = 'user_act
     trigger_type: triggerType,
     note,
   });
+  // Real-time: push status change to everyone watching this order
+  try {
+    emitToOrder(order.id, 'order:status', { orderId: order.id, status: newStatus });
+    if (order.client_id) emitToUser(order.client_id, 'order:status', { orderId: order.id, status: newStatus });
+    if (order.freelancer_id) emitToUser(order.freelancer_id, 'order:status', { orderId: order.id, status: newStatus });
+  } catch {}
 }
 
 // ── Helper: complete an order (shared by approve + auto-complete) ───────────
@@ -209,6 +217,21 @@ exports.startOrder = async (req, res, next) => {
     });
 
     const updated = await db('orders').where({ id: order.id }).first();
+
+    // Email the client that work has started
+    const [clientUser, freelancerUser] = await Promise.all([
+      db('users').where({ id: order.client_id }).select('name', 'email').first(),
+      db('users').where({ id: order.freelancer_id }).select('name').first(),
+    ]);
+    const jobRow = await db('jobs').where({ id: order.job_id }).select('title').first();
+    sendTemplateEmail(clientUser.email, 'orderStarted', {
+      clientName: clientUser.name,
+      freelancerName: freelancerUser.name,
+      jobTitle: jobRow?.title || 'your order',
+      orderId: order.id,
+      deadline: order.deadline || 'TBD',
+    }).catch(() => {});
+
     return success(res, updated, 'Order started');
   } catch (err) {
     next(err);
@@ -291,6 +314,17 @@ exports.deliverOrder = async (req, res, next) => {
         .first(),
       db('delivery_attachments').where({ delivery_id: delivery.id }),
     ]);
+    // Email the client about the delivery
+    const clientInfo = await db('users').where({ id: order.client_id }).select('name', 'email').first();
+    const freelancerInfo = await db('users').where({ id: order.freelancer_id }).select('name').first();
+    const jobInfo = await db('jobs').where({ id: order.job_id }).select('title').first();
+    sendTemplateEmail(clientInfo.email, 'orderDelivered', {
+      clientName: clientInfo.name,
+      freelancerName: freelancerInfo.name,
+      jobTitle: jobInfo?.title || 'your order',
+      orderId: order.id,
+    }).catch(() => {});
+
     return success(res, { order: updated, delivery: { ...delivery, attachments: deliveryAttachments } }, 'Delivery submitted');
   } catch (err) {
     next(err);
@@ -317,6 +351,17 @@ exports.approveOrder = async (req, res, next) => {
     });
 
     const updated = await db('orders').where({ id: order.id }).first();
+
+    // Email the freelancer about payment release
+    const flUser = await db('users').where({ id: order.freelancer_id }).select('name', 'email').first();
+    const jRow = await db('jobs').where({ id: order.job_id }).select('title').first();
+    sendTemplateEmail(flUser.email, 'orderCompleted', {
+      freelancerName: flUser.name,
+      jobTitle: jRow?.title || 'your order',
+      payout: order.freelancer_payout,
+      orderId: order.id,
+    }).catch(() => {});
+
     return success(res, updated, 'Order approved and completed');
   } catch (err) {
     next(err);
@@ -372,6 +417,17 @@ exports.requestRevision = async (req, res, next) => {
     });
 
     const updated = await db('orders').where({ id: order.id }).first();
+
+    // Email the freelancer about the revision
+    const revFlUser = await db('users').where({ id: order.freelancer_id }).select('name', 'email').first();
+    const revJobRow = await db('jobs').where({ id: order.job_id }).select('title').first();
+    sendTemplateEmail(revFlUser.email, 'revisionRequested', {
+      freelancerName: revFlUser.name,
+      jobTitle: revJobRow?.title || 'your order',
+      feedback,
+      orderId: order.id,
+    }).catch(() => {});
+
     return success(res, updated, 'Revision requested');
   } catch (err) {
     next(err);
@@ -689,7 +745,12 @@ exports.sendOrderMessage = async (req, res, next) => {
     });
 
     const sender = await db('users').where({ id: req.user.id }).select('name').first();
-    return success(res, { ...msg, sender_name: sender.name }, 'Message sent', 201);
+    const fullMsg = { ...msg, sender_name: sender.name };
+
+    // Real-time: broadcast new message to everyone in the order room
+    try { emitToOrder(order.id, 'order:message', fullMsg); } catch {}
+
+    return success(res, fullMsg, 'Message sent', 201);
   } catch (err) {
     next(err);
   }

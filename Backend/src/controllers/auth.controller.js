@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../config/database');
 const { sign } = require('../utils/jwt');
 const { success, error } = require('../utils/response');
+const { sendTemplateEmail } = require('../services/email.service');
 
 exports.register = async (req, res, next) => {
   try {
@@ -21,6 +22,10 @@ exports.register = async (req, res, next) => {
     }
 
     const token = sign({ id: user.id, role: user.role });
+
+    // Fire-and-forget welcome email
+    sendTemplateEmail(email, 'welcome', { name }).catch(() => {});
+
     return success(res, { user, token }, 'Registration successful', 201);
   } catch (err) {
     next(err);

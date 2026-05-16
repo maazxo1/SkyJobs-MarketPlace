@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markRead, markAllRead } from '../../api/notifications.api';
+import { useSocket } from '../../context/SocketContext';
 import Icon from './Icon';
 
 const TYPE_COLOR = {
@@ -19,6 +20,7 @@ const timeAgo = (date) => {
 
 const NotificationBell = () => {
   const navigate = useNavigate();
+  const { on } = useSocket();
   const [open, setOpen]                 = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unread, setUnread]             = useState(0);
@@ -32,11 +34,24 @@ const NotificationBell = () => {
     } catch { /* not logged in */ }
   }, []);
 
+  // Initial load + fallback poll every 60s (socket handles real-time)
   useEffect(() => {
     load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Real-time: new notification arrives via socket → prepend to list
+  useEffect(() => {
+    return on('notification:new', (notification) => {
+      setNotifications((prev) => {
+        // Avoid duplicates if poll fires right after socket push
+        if (prev.find((n) => n.id === notification.id)) return prev;
+        return [notification, ...prev];
+      });
+      setUnread((c) => c + 1);
+    });
+  }, [on]);
 
   useEffect(() => {
     if (!open) return;

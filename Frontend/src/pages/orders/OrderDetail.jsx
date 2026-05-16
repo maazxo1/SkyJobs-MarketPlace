@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useSocket } from '../../context/SocketContext';
 import {
   getOrder, startOrder, deliverOrder, approveOrder,
   requestRevision, cancelOrder, cancelRespond, openDispute,
@@ -174,6 +175,7 @@ const OrderDetail = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
+  const { joinOrderRoom, leaveOrderRoom, on } = useSocket();
   const msgEndRef = useRef(null);
 
   const [order, setOrder] = useState(null);
@@ -216,6 +218,35 @@ const OrderDetail = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // Real-time: join this order's socket room, listen for messages + status changes
+  useEffect(() => {
+    joinOrderRoom(id);
+
+    const cleanMsg = on('order:message', (msg) => {
+      setOrder((prev) => {
+        if (!prev) return prev;
+        // Avoid duplicate if our own send already appended
+        const exists = (prev.messages || []).find((m) => m.id === msg.id);
+        if (exists) return prev;
+        return { ...prev, messages: [...(prev.messages || []), msg] };
+      });
+      setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    });
+
+    const cleanStatus = on('order:status', ({ orderId, status }) => {
+      if (String(orderId) !== String(id)) return;
+      setOrder((prev) => prev ? { ...prev, status } : prev);
+      // Reload full order data to get latest banners/flags
+      load();
+    });
+
+    return () => {
+      leaveOrderRoom(id);
+      cleanMsg();
+      cleanStatus();
+    };
+  }, [id, joinOrderRoom, leaveOrderRoom, on, load]);
+
   useEffect(() => {
     if (activeTab === 'messages') {
       setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -239,13 +270,33 @@ const OrderDetail = () => {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!msgText.trim() || sendingMsg) return;
+    const text = msgText.trim();
+    setMsgText('');
     setSendingMsg(true);
+    // Optimistic append so the sender sees the message instantly
+    const tempId = `temp-${Date.now()}`;
+    setOrder((prev) => prev ? {
+      ...prev,
+      messages: [...(prev.messages || []), {
+        id: tempId, sender_id: user.id, sender_name: user.name,
+        message: text, created_at: new Date().toISOString(),
+      }],
+    } : prev);
+    setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
     try {
-      await sendOrderMessage(id, { message: msgText });
-      setMsgText('');
-      await load();
-      setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      const res = await sendOrderMessage(id, { message: text });
+      // Replace the temp message with the real one from server
+      setOrder((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: prev.messages.map((m) => m.id === tempId ? { ...res.data.data } : m),
+        };
+      });
     } catch (err) {
+      // Remove the optimistic message on failure
+      setOrder((prev) => prev ? { ...prev, messages: (prev.messages || []).filter((m) => m.id !== tempId) } : prev);
+      setMsgText(text);
       toast.error(err.response?.data?.error || 'Failed to send message');
     } finally {
       setSendingMsg(false);

@@ -18,6 +18,7 @@ import AdminPanel from './pages/admin/AdminPanel';
 import Orders from './pages/orders/Orders';
 import OrderDetail from './pages/orders/OrderDetail';
 import DisputeDetail from './pages/disputes/DisputeDetail';
+import Earnings from './pages/earnings/Earnings';
 import NotFound from './pages/NotFound';
 
 const DashboardRouter = () => {
@@ -71,6 +72,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <DashboardRouter />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/earnings"
+            element={
+              <ProtectedRoute roles={['freelancer']}>
+                <Earnings />
               </ProtectedRoute>
             }
           />

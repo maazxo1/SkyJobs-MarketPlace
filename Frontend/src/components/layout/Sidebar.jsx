@@ -15,6 +15,7 @@ const FREELANCER_ITEMS = [
   { path: '/',            icon: 'compass',   label: 'Home' },
   { path: '/jobs',        icon: 'briefcase', label: 'Browse work' },
   { path: '/orders',      icon: 'clipboard', label: 'My orders' },
+  { path: '/earnings',    icon: 'money',     label: 'Earnings' },
   { path: '/dashboard',   icon: 'chart',     label: 'Dashboard' },
 ];
 

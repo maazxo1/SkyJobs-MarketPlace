@@ -1,18 +1,5 @@
 const db = require('../config/database');
 
-/**
- * Create a notification record.
- * @param {object} opts
- * @param {number}  opts.userId
- * @param {string}  opts.eventType  - machine-readable key, e.g. 'bid.accepted'
- * @param {string}  opts.title
- * @param {string}  opts.message
- * @param {string}  [opts.link]
- * @param {string}  [opts.entityType] - order / bid / dispute / contract
- * @param {number}  [opts.entityId]
- * @param {string}  [opts.priority]  - low / normal / high / urgent (default: normal)
- * @param {object}  [opts.trx]       - knex transaction (omit to use default db)
- */
 async function notify(opts) {
   const {
     userId, eventType, title, message,
@@ -21,18 +8,29 @@ async function notify(opts) {
   } = opts;
 
   const conn = trx || db;
-  await conn('notifications').insert({
-    user_id: userId,
-    type: eventType,        // keep legacy 'type' field populated
-    event_type: eventType,
-    title,
-    message,
-    link,
-    entity_type: entityType,
-    entity_id: entityId,
-    priority,
-    read: false,
-  }).catch(() => {}); // notifications are non-critical; never throw
+  let notification;
+  try {
+    [notification] = await conn('notifications').insert({
+      user_id: userId,
+      type: eventType,
+      event_type: eventType,
+      title,
+      message,
+      link,
+      entity_type: entityType,
+      entity_id: entityId,
+      priority,
+      read: false,
+    }, ['*']);
+  } catch {
+    return; // notifications are non-critical; never throw
+  }
+
+  // Real-time push via socket (lazy-require avoids circular dep at load time)
+  try {
+    const { emitToUser } = require('../socket');
+    emitToUser(userId, 'notification:new', notification);
+  } catch {}
 }
 
 module.exports = { notify };
