@@ -70,14 +70,17 @@ const ClientDashboard = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [jRes, oRes, catRes] = await Promise.all([
+      const [jRes, oRes, catRes] = await Promise.allSettled([
         getJobs({ client_id: user?.id }),
         listOrders({ limit: 50 }),
         getCategories(),
       ]);
-      setJobs(jRes.data.data || []);
-      setOrders(oRes.data.data || []);
-      setCategories(catRes.data.data || []);
+      if (jRes.status === 'fulfilled')   setJobs(jRes.value.data.data || []);
+      if (oRes.status === 'fulfilled')   setOrders(oRes.value.data.data || []);
+      if (catRes.status === 'fulfilled') setCategories(catRes.value.data.data || []);
+      if (jRes.status === 'rejected' || oRes.status === 'rejected') {
+        toast.error('Failed to load some dashboard data');
+      }
     } catch {
       toast.error('Failed to load dashboard');
     } finally {
