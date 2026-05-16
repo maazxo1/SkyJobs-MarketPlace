@@ -31,6 +31,12 @@ window.addEventListener('api:servererror', (e) => {
   }));
 });
 
+// Keep the Render free-tier server warm — ping /health every 10 min so it never spins down.
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+const keepAlive = () => fetch(`${API_BASE}/health`, { method: 'GET' }).catch(() => {});
+keepAlive(); // ping immediately on page load
+setInterval(keepAlive, 10 * 60 * 1000);
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
