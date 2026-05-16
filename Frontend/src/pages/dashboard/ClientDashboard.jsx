@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getJobs, createJob, getCategories, getJobBids } from '../../api/jobs.api';
 import { listOrders, approveOrder, requestRevision } from '../../api/orders.api';
@@ -36,6 +36,69 @@ const StarRating = ({ value, onChange }) => (
 
 const EMPTY_JOB = { title: '', description: '', category_id: '', budget_min: '', budget_max: '', deadline: '', skills: '' };
 
+const CategoryPicker = ({ categories, value, onChange, loading }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = categories.find((c) => String(c.id) === String(value));
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="field"
+        disabled={loading}
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', cursor: loading ? 'not-allowed' : 'pointer',
+          color: selected ? 'var(--ink)' : 'var(--ink-4)',
+        }}
+      >
+        <span>{loading ? 'Loading categories…' : (selected?.name || 'Select category')}</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-4)', marginLeft: 8 }}>▾</span>
+      </button>
+
+      {open && !loading && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 200,
+          background: 'var(--bg-2)', border: '1px solid var(--border-strong)',
+          borderRadius: 10, overflow: 'hidden',
+          boxShadow: '0 8px 24px color-mix(in oklch, var(--ink) 20%, transparent)',
+          maxHeight: 260, overflowY: 'auto',
+        }}>
+          {categories.length === 0 ? (
+            <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--ink-4)' }}>No categories available</div>
+          ) : categories.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => { onChange(String(c.id)); setOpen(false); }}
+              style={{
+                width: '100%', textAlign: 'left', padding: '10px 16px',
+                fontSize: 13, color: String(c.id) === String(value) ? 'var(--accent)' : 'var(--ink)',
+                background: String(c.id) === String(value) ? 'color-mix(in oklch, var(--accent) 10%, transparent)' : 'transparent',
+                fontWeight: String(c.id) === String(value) ? 600 : 400,
+                borderBottom: '1px solid var(--border)',
+                transition: 'background .1s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-3)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = String(c.id) === String(value) ? 'color-mix(in oklch, var(--accent) 10%, transparent)' : 'transparent'; }}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ClientDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -69,13 +132,27 @@ const ClientDashboard = () => {
   const [jobForm, setJobForm] = useState(EMPTY_JOB);
   const [jobSaving, setJobSaving] = useState(false);
 
-  // Categories load independently — no auth needed, must always be available
+  // Categories load independently — retry once if empty (backend self-heal may need a moment)
   useEffect(() => {
-    setCatsLoading(true);
-    getCategories()
-      .then((r) => { const list = r.data.data || []; setCategories(list); })
-      .catch(() => {})
-      .finally(() => setCatsLoading(false));
+    let cancelled = false;
+    const load = async (attempt = 1) => {
+      try {
+        const r = await getCategories();
+        const list = r.data?.data || [];
+        if (cancelled) return;
+        if (list.length === 0 && attempt < 3) {
+          setTimeout(() => load(attempt + 1), 1500);
+          return;
+        }
+        setCategories(list);
+      } catch {
+        if (!cancelled && attempt < 3) setTimeout(() => load(attempt + 1), 1500);
+      } finally {
+        if (!cancelled) setCatsLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -196,6 +273,7 @@ const ClientDashboard = () => {
 
   const handleCreateJob = async (e) => {
     e.preventDefault();
+    if (!jobForm.category_id) { toast.error('Please select a category'); return; }
     setJobSaving(true);
     try {
       const { skills, ...rest } = jobForm;
@@ -527,12 +605,12 @@ const ClientDashboard = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <div className="label" style={{ marginBottom: 6 }}>Category</div>
-                <select className="field" value={jobForm.category_id}
-                  onChange={(e) => setJobForm((p) => ({ ...p, category_id: e.target.value }))}
-                  required disabled={catsLoading}>
-                  <option value="">{catsLoading ? 'Loading…' : 'Select category'}</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <CategoryPicker
+                  categories={categories}
+                  value={jobForm.category_id}
+                  onChange={(id) => setJobForm((p) => ({ ...p, category_id: id }))}
+                  loading={catsLoading}
+                />
               </div>
               <div>
                 <div className="label" style={{ marginBottom: 6 }}>Deadline</div>

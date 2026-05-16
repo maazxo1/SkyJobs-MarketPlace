@@ -35,9 +35,20 @@ const JobListings = () => {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    getCategories()
-      .then((r) => { const list = r.data.data || []; setCategories(list); })
-      .catch(() => {});
+    let cancelled = false;
+    const load = async (attempt = 1) => {
+      try {
+        const r = await getCategories();
+        const list = r.data?.data || [];
+        if (cancelled) return;
+        if (list.length === 0 && attempt < 3) { setTimeout(() => load(attempt + 1), 1500); return; }
+        setCategories(list);
+      } catch {
+        if (!cancelled && attempt < 3) setTimeout(() => load(attempt + 1), 1500);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   const fetchJobs = useCallback(async () => {
