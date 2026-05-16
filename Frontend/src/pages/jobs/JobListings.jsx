@@ -35,7 +35,9 @@ const JobListings = () => {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    getCategories().then((r) => setCategories(r.data.data || [])).catch(() => {});
+    getCategories()
+      .then((r) => { const list = r.data.data || []; setCategories(list); })
+      .catch(() => {});
   }, []);
 
   const fetchJobs = useCallback(async () => {

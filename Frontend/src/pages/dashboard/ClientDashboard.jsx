@@ -44,6 +44,7 @@ const ClientDashboard = () => {
   const [jobs, setJobs] = useState([]);
   const [orders, setOrders] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [catsLoading, setCatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('briefs');
   const [acting, setActing] = useState(null); // orderId being acted on
@@ -68,16 +69,23 @@ const ClientDashboard = () => {
   const [jobForm, setJobForm] = useState(EMPTY_JOB);
   const [jobSaving, setJobSaving] = useState(false);
 
+  // Categories load independently — no auth needed, must always be available
+  useEffect(() => {
+    setCatsLoading(true);
+    getCategories()
+      .then((r) => { const list = r.data.data || []; setCategories(list); })
+      .catch(() => {})
+      .finally(() => setCatsLoading(false));
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
-      const [jRes, oRes, catRes] = await Promise.allSettled([
+      const [jRes, oRes] = await Promise.allSettled([
         getJobs({ client_id: user?.id }),
         listOrders({ limit: 50 }),
-        getCategories(),
       ]);
-      if (jRes.status === 'fulfilled')   setJobs(jRes.value.data.data || []);
-      if (oRes.status === 'fulfilled')   setOrders(oRes.value.data.data || []);
-      if (catRes.status === 'fulfilled') setCategories(catRes.value.data.data || []);
+      if (jRes.status === 'fulfilled') setJobs(jRes.value.data.data || []);
+      if (oRes.status === 'fulfilled') setOrders(oRes.value.data.data || []);
       if (jRes.status === 'rejected' || oRes.status === 'rejected') {
         toast.error('Failed to load some dashboard data');
       }
@@ -520,8 +528,9 @@ const ClientDashboard = () => {
               <div>
                 <div className="label" style={{ marginBottom: 6 }}>Category</div>
                 <select className="field" value={jobForm.category_id}
-                  onChange={(e) => setJobForm((p) => ({ ...p, category_id: e.target.value }))} required>
-                  <option value="">Select…</option>
+                  onChange={(e) => setJobForm((p) => ({ ...p, category_id: e.target.value }))}
+                  required disabled={catsLoading}>
+                  <option value="">{catsLoading ? 'Loading…' : 'Select category'}</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
