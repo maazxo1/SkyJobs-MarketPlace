@@ -190,6 +190,7 @@ const ClientDashboard = () => {
       const { skills, ...rest } = jobForm;
       await createJob({
         ...rest,
+        category_id: Number(rest.category_id),
         budget_min: Number(rest.budget_min),
         budget_max: Number(rest.budget_max),
         skills_required: skills.split(',').map((s) => s.trim()).filter(Boolean),

@@ -43,7 +43,7 @@ exports.listJobs = async (req, res, next) => {
 
     if (category_id) query = query.where('jobs.category_id', category_id);
     if (budget_min) query = query.where('jobs.budget_max', '>=', Number(budget_min));
-    if (budget_max) query = query.where('jobs.budget_min', '<=', Number(budget_max));
+    if (budget_max) query = query.where('jobs.budget_max', '<=', Number(budget_max));
     if (location) query = query.whereRaw('jobs.location ILIKE ?', [`%${location}%`]);
     if (skill) query = query.whereRaw("jobs.skills_required::text ILIKE ?", [`%${skill}%`]);
 

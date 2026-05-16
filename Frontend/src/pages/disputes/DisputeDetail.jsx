@@ -48,11 +48,10 @@ const EVIDENCE_TYPES = [
 ];
 
 const STATUS_COLORS = {
-  open:                    'var(--warning)',
-  under_review:            'var(--accent)',
-  resolved_for_client:     'var(--success)',
-  resolved_for_freelancer: 'var(--success)',
-  withdrawn:               'var(--ink-4)',
+  open:         'var(--warning)',
+  under_review: 'var(--accent)',
+  resolved:     'var(--success)',
+  withdrawn:    'var(--ink-4)',
 };
 
 const DisputeDetail = () => {
@@ -178,7 +177,7 @@ const DisputeDetail = () => {
 
   const isOpener     = dispute.opened_by === user?.id;
   const isRespondent = dispute.respondent_id === user?.id;
-  const isOpen       = dispute.status === 'open' || dispute.status === 'under_review';
+  const isOpen       = ['open', 'under_review'].includes(dispute.status);
   const deadline     = daysUntil(dispute.respondent_deadline);
   const statusColor  = STATUS_COLORS[dispute.status] || 'var(--ink-3)';
 
@@ -441,14 +440,21 @@ const DisputeDetail = () => {
                 {dispute.status === 'withdrawn' ? 'Dispute withdrawn' : 'Dispute resolved'}
               </div>
               <p className="muted" style={{ fontSize: 12 }}>
-                {dispute.status === 'resolved_for_client'
-                  ? 'This dispute was resolved in the client\'s favour.'
-                  : dispute.status === 'resolved_for_freelancer'
-                  ? 'This dispute was resolved in the freelancer\'s favour.'
-                  : dispute.status === 'withdrawn'
+                {dispute.status === 'withdrawn'
                   ? 'The opener withdrew this dispute.'
-                  : 'This dispute has been closed.'}
+                  : dispute.resolution === 'release_to_freelancer'
+                  ? 'Resolved in the freelancer\'s favour — funds released.'
+                  : dispute.resolution === 'refund_to_client'
+                  ? 'Resolved in the client\'s favour — payment refunded.'
+                  : dispute.resolution === 'partial_split'
+                  ? `Resolved with a partial split${dispute.split_client_pct != null ? ` (${dispute.split_client_pct}% to client)` : ''}.`
+                  : dispute.resolution_note || 'This dispute has been closed.'}
               </p>
+              {dispute.resolution_note && dispute.status !== 'withdrawn' && (
+                <p style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 6, fontStyle: 'italic' }}>
+                  Admin note: {dispute.resolution_note}
+                </p>
+              )}
             </div>
           )}
         </div>

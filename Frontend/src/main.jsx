@@ -21,6 +21,16 @@ window.addEventListener('api:offline', (e) => {
   }));
 });
 
+let lastServerErrorToast = 0;
+window.addEventListener('api:servererror', (e) => {
+  const now = Date.now();
+  if (now - lastServerErrorToast < 8000) return;
+  lastServerErrorToast = now;
+  window.dispatchEvent(new CustomEvent('app:toast', {
+    detail: { type: 'error', message: e.detail?.message || 'Server error. Please try again later.' },
+  }));
+});
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
