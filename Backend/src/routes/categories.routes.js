@@ -19,7 +19,11 @@ router.get('/', async (req, res, next) => {
   try {
     let categories = await db('categories').select('*').orderBy('name');
     if (categories.length === 0) {
-      await db('categories').insert(DEFAULT_CATEGORIES);
+      try {
+        await db('categories').insert(DEFAULT_CATEGORIES);
+      } catch (_) {
+        // concurrent request already inserted — just re-fetch
+      }
       categories = await db('categories').select('*').orderBy('name');
     }
     return success(res, categories);

@@ -41,10 +41,11 @@ const JobListings = () => {
         const r = await getCategories();
         const list = r.data?.data || [];
         if (cancelled) return;
-        if (list.length === 0 && attempt < 3) { setTimeout(() => load(attempt + 1), 1500); return; }
+        if (list.length === 0 && attempt < 5) { setTimeout(() => load(attempt + 1), 1500); return; }
         setCategories(list);
       } catch {
-        if (!cancelled && attempt < 3) setTimeout(() => load(attempt + 1), 1500);
+        if (cancelled) return;
+        if (attempt < 5) { setTimeout(() => load(attempt + 1), 1500); return; }
       }
     };
     load();

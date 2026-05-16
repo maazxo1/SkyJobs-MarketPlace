@@ -36,7 +36,7 @@ const StarRating = ({ value, onChange }) => (
 
 const EMPTY_JOB = { title: '', description: '', category_id: '', budget_min: '', budget_max: '', deadline: '', skills: '' };
 
-const CategoryPicker = ({ categories, value, onChange, loading }) => {
+const CategoryPicker = ({ categories, value, onChange, loading, onRetry }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const selected = categories.find((c) => String(c.id) === String(value));
@@ -73,7 +73,15 @@ const CategoryPicker = ({ categories, value, onChange, loading }) => {
           maxHeight: 260, overflowY: 'auto',
         }}>
           {categories.length === 0 ? (
-            <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--ink-4)' }}>No categories available</div>
+            <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--ink-4)' }}>
+              <div>Failed to load categories.</div>
+              {onRetry && (
+                <button type="button" onClick={() => { setOpen(false); onRetry(); }}
+                  style={{ marginTop: 6, fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
+                  Retry
+                </button>
+              )}
+            </div>
           ) : categories.map((c) => (
             <button
               key={c.id}
@@ -108,6 +116,7 @@ const ClientDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [categories, setCategories] = useState([]);
   const [catsLoading, setCatsLoading] = useState(true);
+  const [catsTick, setCatsTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('briefs');
   const [acting, setActing] = useState(null); // orderId being acted on
@@ -132,28 +141,28 @@ const ClientDashboard = () => {
   const [jobForm, setJobForm] = useState(EMPTY_JOB);
   const [jobSaving, setJobSaving] = useState(false);
 
-  // Categories load independently — retry once if empty (backend self-heal may need a moment)
   useEffect(() => {
     let cancelled = false;
+    setCatsLoading(true);
     const load = async (attempt = 1) => {
       try {
         const r = await getCategories();
         const list = r.data?.data || [];
         if (cancelled) return;
-        if (list.length === 0 && attempt < 3) {
-          setTimeout(() => load(attempt + 1), 1500);
-          return;
-        }
+        if (list.length === 0 && attempt < 5) { setTimeout(() => load(attempt + 1), 1500); return; }
         setCategories(list);
+        setCatsLoading(false);
       } catch {
-        if (!cancelled && attempt < 3) setTimeout(() => load(attempt + 1), 1500);
-      } finally {
-        if (!cancelled) setCatsLoading(false);
+        if (cancelled) return;
+        if (attempt < 5) { setTimeout(() => load(attempt + 1), 1500); return; }
+        setCatsLoading(false);
       }
     };
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [catsTick]);
+
+  const retryCategories = () => { setCategories([]); setCatsTick((t) => t + 1); };
 
   const fetchData = useCallback(async () => {
     try {
@@ -610,6 +619,7 @@ const ClientDashboard = () => {
                   value={jobForm.category_id}
                   onChange={(id) => setJobForm((p) => ({ ...p, category_id: id }))}
                   loading={catsLoading}
+                  onRetry={retryCategories}
                 />
               </div>
               <div>
