@@ -12,6 +12,8 @@ const {
   getDeliveries,
   requestExtension,
   respondExtension,
+  getOrderMessages,
+  sendOrderMessage,
 } = require('../controllers/orders.controller');
 
 router.get('/', auth, listOrders);
@@ -25,6 +27,9 @@ router.post('/:id/cancel-respond', auth, respondCancellation);
 router.get('/:id/deliveries', auth, getDeliveries);
 router.post('/:id/request-extension', auth, requestExtension);
 router.post('/:id/extensions/:ext_id/respond', auth, respondExtension);
+
+router.get('/:id/messages', auth, getOrderMessages);
+router.post('/:id/messages', auth, sendOrderMessage);
 
 // Review for a completed order
 const { createReview } = require('../controllers/reviews.controller');

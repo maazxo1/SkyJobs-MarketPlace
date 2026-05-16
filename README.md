@@ -393,6 +393,81 @@ npm run lint             # ESLint
 
 ---
 
+## Deployment
+
+### Backend — Render
+
+**1. Create a PostgreSQL database on Render**
+
+- Go to [render.com](https://render.com) → New → **PostgreSQL**
+- Name it `skyjobs-db`, choose the free tier
+- Copy the **Internal Database URL** — you'll need it in step 3
+
+**2. Create a Web Service on Render**
+
+- New → **Web Service** → connect your GitHub repo
+- Set **Root Directory** to `Backend`
+- Set **Build Command** to:
+  ```
+  npm install && npm run migrate
+  ```
+- Set **Start Command** to:
+  ```
+  npm start
+  ```
+- Set **Environment** to `Node`
+
+**3. Add environment variables in Render**
+
+| Key | Value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | *(paste the Internal Database URL from step 1)* |
+| `JWT_SECRET` | *(generate a random 32+ char string)* |
+| `JWT_EXPIRES_IN` | `7d` |
+| `CLIENT_URL` | *(your Vercel frontend URL — add after deploying frontend)* |
+
+> Render auto-assigns `PORT`, so do not set it manually.
+
+**4. Deploy** — Render will build, migrate, and start the API. Copy the service URL (e.g. `https://skyjobs-api.onrender.com`).
+
+---
+
+### Frontend — Vercel
+
+**1. Import the project**
+
+- Go to [vercel.com](https://vercel.com) → New Project → import your GitHub repo
+- Set **Root Directory** to `Frontend`
+- Vercel auto-detects Vite — no build command changes needed
+
+**2. Add environment variable**
+
+| Key | Value |
+|---|---|
+| `VITE_API_URL` | `https://skyjobs-api.onrender.com/api/v1` *(your Render URL)* |
+
+**3. Deploy** — Vercel builds and deploys. Copy the live URL.
+
+**4. Update CORS on Render**
+
+Go back to your Render service → Environment → update `CLIENT_URL` to your Vercel URL (e.g. `https://skyjobs.vercel.app`), then redeploy.
+
+---
+
+### Deployment Checklist
+
+- [ ] Render PostgreSQL created and `DATABASE_URL` copied
+- [ ] Render Web Service created with `Root Directory = Backend`
+- [ ] All environment variables set on Render
+- [ ] Migrations ran successfully on first deploy (check Render logs)
+- [ ] Vercel project created with `Root Directory = Frontend`
+- [ ] `VITE_API_URL` set to Render service URL
+- [ ] `CLIENT_URL` on Render updated to Vercel URL
+- [ ] Frontend loads and can reach the API (check browser Network tab)
+
+---
+
 ## Contributing
 
 1. Fork the repository

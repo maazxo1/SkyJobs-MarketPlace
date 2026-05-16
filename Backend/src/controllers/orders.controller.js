@@ -153,7 +153,7 @@ exports.getOrder = async (req, res, next) => {
     const isAdmin = req.user.role === 'admin';
     if (!isParty && !isAdmin) return error(res, 'Unauthorized', 403, 'FORBIDDEN');
 
-    const [history, deliveries] = await Promise.all([
+    const [history, deliveries, pending_cancellation, pending_extension, messages] = await Promise.all([
       db('order_status_history').where({ order_id: order.id }).orderBy('created_at', 'asc'),
       db('deliveries')
         .where({ order_id: order.id })
@@ -162,9 +162,23 @@ exports.getOrder = async (req, res, next) => {
           const attachments = await db('delivery_attachments').where({ delivery_id: d.id });
           return { ...d, attachments };
         }))),
+      db('cancellation_requests')
+        .where({ order_id: order.id, status: 'pending' })
+        .join('users as requester', 'cancellation_requests.requested_by', 'requester.id')
+        .select('cancellation_requests.*', 'requester.name as requester_name')
+        .first(),
+      db('deadline_extensions')
+        .where({ order_id: order.id, status: 'pending' })
+        .first(),
+      db('order_messages')
+        .where({ order_id: order.id })
+        .join('users', 'order_messages.sender_id', 'users.id')
+        .select('order_messages.*', 'users.name as sender_name')
+        .orderBy('order_messages.created_at', 'asc')
+        .catch(() => []),
     ]);
 
-    return success(res, { ...order, history, deliveries });
+    return success(res, { ...order, history, deliveries, pending_cancellation: pending_cancellation || null, pending_extension: pending_extension || null, messages: messages || [] });
   } catch (err) {
     next(err);
   }
@@ -607,6 +621,75 @@ exports.respondExtension = async (req, res, next) => {
 
     const updatedOrder = await db('orders').where({ id: order.id }).first();
     return success(res, { extension: updatedExt, order: updatedOrder }, accept ? 'Extension accepted' : 'Extension rejected');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── GET /orders/:id/messages ─────────────────────────────────────────────────
+exports.getOrderMessages = async (req, res, next) => {
+  try {
+    const order = await db('orders').where({ id: req.params.id }).first();
+    if (!order) return error(res, 'Order not found', 404, 'NOT_FOUND');
+
+    const isParty = order.client_id === req.user.id || order.freelancer_id === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+    if (!isParty && !isAdmin) return error(res, 'Unauthorized', 403, 'FORBIDDEN');
+
+    const messages = await db('order_messages')
+      .where({ order_id: order.id })
+      .join('users', 'order_messages.sender_id', 'users.id')
+      .select('order_messages.*', 'users.name as sender_name')
+      .orderBy('order_messages.created_at', 'asc');
+
+    // Mark unread messages as read for this user
+    await db('order_messages')
+      .where({ order_id: order.id, is_read: false })
+      .whereNot({ sender_id: req.user.id })
+      .update({ is_read: true });
+
+    return success(res, messages);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── POST /orders/:id/messages ────────────────────────────────────────────────
+exports.sendOrderMessage = async (req, res, next) => {
+  try {
+    const order = await db('orders').where({ id: req.params.id }).first();
+    if (!order) return error(res, 'Order not found', 404, 'NOT_FOUND');
+
+    const isParty = order.client_id === req.user.id || order.freelancer_id === req.user.id;
+    if (!isParty) return error(res, 'Unauthorized', 403, 'FORBIDDEN');
+
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return error(res, 'Cannot message on a closed order', 400, 'INVALID_STATUS');
+    }
+
+    const { message } = req.body;
+    if (!message || !message.trim()) return error(res, 'Message is required', 400, 'VALIDATION_ERROR');
+    if (message.length > 2000) return error(res, 'Message must be under 2000 characters', 400, 'VALIDATION_ERROR');
+
+    const [msg] = await db('order_messages').insert({
+      order_id: order.id,
+      sender_id: req.user.id,
+      message: message.trim(),
+    }, ['*']);
+
+    const recipientId = order.client_id === req.user.id ? order.freelancer_id : order.client_id;
+    await notify({
+      userId: recipientId,
+      eventType: 'order.message',
+      title: 'New message on your order',
+      message: message.trim().slice(0, 80) + (message.length > 80 ? '…' : ''),
+      link: `/orders/${order.id}`,
+      entityType: 'order',
+      entityId: order.id,
+    });
+
+    const sender = await db('users').where({ id: req.user.id }).select('name').first();
+    return success(res, { ...msg, sender_name: sender.name }, 'Message sent', 201);
   } catch (err) {
     next(err);
   }

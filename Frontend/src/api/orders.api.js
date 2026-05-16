@@ -13,3 +13,5 @@ export const reviewOrder = (id, data) => api.post(`/orders/${id}/review`, data);
 export const openDispute = (id, data) => api.post(`/orders/${id}/dispute`, data);
 export const requestExtension = (id, data) => api.post(`/orders/${id}/request-extension`, data);
 export const respondExtension = (id, extId, data) => api.post(`/orders/${id}/extensions/${extId}/respond`, data);
+export const getOrderMessages = (id) => api.get(`/orders/${id}/messages`);
+export const sendOrderMessage = (id, data) => api.post(`/orders/${id}/messages`, data);
